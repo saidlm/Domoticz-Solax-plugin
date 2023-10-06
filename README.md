@@ -15,10 +15,12 @@ All the information which are collected by default version are visible on pictur
 ![Switches tab](images/Domoticz-Solax_3.png)
 
 ## Prerequsities
-The installation of additional python3 library – pymodbus is necessary.
+* Running Domoticz software
+* The installation of additional python3 library – pymodbus is necessary.
 ```
 sudo pip3 install -U pymodbus
 ```
+The plugin was tested with Domoticz version 2023.2 and pymodbus 3.5.2
 
 ## Installation
 * Place the folder inside Domoticz plugin folder e.g. :
