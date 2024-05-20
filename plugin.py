@@ -119,7 +119,7 @@ class BasePlugin:
     
 
     def updateDevices(self, registers):
-        decoder = BinaryPayloadDecoder.fromRegisters(registers, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
+        decoder = BinaryPayloadDecoder.fromRegisters(registers, byteorder=Endian.Big, wordorder=Endian.Little)
 
         # Output Power / Energy
         decoder.reset()
