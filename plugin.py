@@ -42,13 +42,15 @@ class BasePlugin:
         [5, "Battery Power", 248, 1, {}, 1],
         [6, "Grid Power", 248, 1, {}, 1],
         [7, "Local Power Consumption", 248, 1, {}, 1],
-        [10, "Total PV Energy", 243, 29, {'EnergyMeterMode':'1' }, 1],
+        [8, "Off-grid Power", 248, 1, {}, 1],
+        [10, "Total PV Energy", 243, 29, {}, 1],
         [11, "To Battery Energy", 243, 29, {}, 1],
         [12, "From Battery Energy", 243, 29, {}, 1],
         [13, "To Grid Energy", 243, 29, {}, 1],
         [14, "From Grid Energy", 243, 29, {}, 1],
         [15, "Inverter Energy", 243, 29, {}, 1],
         [16, "Local Energy Consumption", 243, 29, {'EnergyMeterMode':'1' }, 1],
+        [17, "Off-Grid Energy", 243, 29, {}, 1],
         [20, "Total Grid Energy", 250, 1, {}, 1],
         [30, "Battery Capacity", 243, 6, {}, 1],
         [31, "Inverter Temperature", 80, 5, {}, 1],
@@ -109,7 +111,7 @@ class BasePlugin:
             if attempCount > 3:
                 Domoticz.Debug("Connection has not been established.")
                 return
-            inputRegisters = self.getInputRegisters()
+            inputRegisters = self.getInputRegisters(0, 290, 10)
             if inputRegisters:
                 break
         
@@ -119,7 +121,7 @@ class BasePlugin:
     
 
     def updateDevices(self, registers):
-        decoder = BinaryPayloadDecoder.fromRegisters(registers, byteorder=Endian.Big, wordorder=Endian.Little)
+        decoder = BinaryPayloadDecoder.fromRegisters(registers, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
 
         # Output Power / Energy
         decoder.reset()
@@ -144,12 +146,14 @@ class BasePlugin:
         UpdateDevice(3,0,"{}".format(valP2))
 
         # Total PV Power / Energy
-        # Energy is calculated due to problem with reading it via ModBus
         valP = valP1 + valP2
+        decoder.reset()
+        decoder.skip_bytes(0x0094 * 2)
+        valE = decoder.decode_32bit_uint() * 100
         UpdateDevice(4,0,"{}".format(valP))
-        UpdateDevice(10,0,"{};{}".format(valP, 0))
+        UpdateDevice(10,0,"{};{}".format(valP, valE))
 
-        # Battery Power /Energy
+        # Battery Power / Energy
         decoder.reset()
         decoder.skip_bytes(0x0016 * 2)
         valP = decoder.decode_16bit_int()
@@ -196,6 +200,22 @@ class BasePlugin:
         UpdateDevice(7,0,"{}".format(valP))
         UpdateDevice(16,0,"{};{}".format(valP, 0))
 
+        # Off-Grid Power / Energy
+        decoder.reset()
+        decoder.skip_bytes(0x001a * 2)
+        val = decoder.decode_16bit_uint()
+        #if val > 1:
+        decoder.reset()
+        decoder.skip_bytes(0x004e * 2)
+        valP = decoder.decode_16bit_int()
+        #else:
+        #    valP = 0
+        decoder.reset()
+        decoder.skip_bytes(0x008e * 2)
+        valE = decoder.decode_32bit_int() * 100
+        UpdateDevice(8,0,"{}".format(valP))
+        UpdateDevice(17,0,"{};{}".format(valP, valE))
+
         # Battery Capacity
         decoder.reset()
         decoder.skip_bytes(0x001c * 2)
@@ -232,23 +252,40 @@ class BasePlugin:
         else:
             UpdateDevice(34,1,"On")
 
-    def getInputRegisters(self, start=0, length=100):
+    def getInputRegisters(self, start=0, length=100, step=10):
         Domoticz.Debug("Connecting to: " + str(Parameters["Address"]) + ":" + str(Parameters["Port"]))
+        (cycles, res) = divmod(length, step)
+        
         try:
             client = ModbusTcpClient(str(Parameters["Address"]), int(Parameters["Port"]))
             client.connect()
-            result = client.read_input_registers(start, length)
-            client.close()
         except:
             Domoticz.Debug("Connection timeout.")
             client.close()
             return False
 
-        try:
-            registers = result.registers
-        except:
-            Domoticz.Debug(result)
-            return False
+        cycle = 0
+        step2 = step
+        registers = []
+
+        while cycle <= cycles:
+            if cycle == cycles:
+                if res > 0:
+                    step2 = res
+                else:
+                    break
+            Domoticz.Debug("Start: " + str(start) + ", cycle: " + str(cycle) + "step: " + str(step) + ", step2: " + str(step2)) 
+            try:
+                result = client.read_input_registers((start + cycle * step), step2)
+                registers = registers + result.registers
+            except:
+                Domoticz.Debug(result) 
+                Domoticz.Debug("Unable to read input registers.")
+                client.close()
+                return False
+            cycle = cycle + 1
+
+        client.close()
         return(registers)
 
         
