@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 #
 # Name: Solax Inverter MODBUS plugin
-# Version: 0.0.1
+# Version: 0.0.2
 # Author: Martin Saidl
 #
 
 """
-<plugin key="SolaxMODBUS" name="Solax Inverter MODBUS plugin" author="Martin Saidl" version="0.0.1" wikilink="https://github.com/saidlm/Domoticz-Solax-Inverter-plugin">
+<plugin key="SolaxMODBUS" name="Solax Inverter MODBUS plugin" author="Martin Saidl" version="0.0.2" wikilink="https://github.com/saidlm/Domoticz-Solax-Inverter-plugin">
     <params>
         <param field="Address" label="Inverter IP Address" width="200px" required="true" default="5.8.8.8"/>
         <param field="Port" label="Port" width="40px" required="true" default="502"/>
@@ -26,6 +26,7 @@
 import Domoticz
 from pymodbus.client import ModbusTcpClient
 from pymodbus.payload import BinaryPayloadDecoder
+from pymodbus.payload import BinaryPayloadBuilder
 from pymodbus.constants import Endian
 from datetime import datetime
 import time
@@ -34,33 +35,63 @@ import time
 class BasePlugin:
 
     __UNITS = [
-        # id, name, type, subtype, options, used
-        [1, "Inverter Power", 248, 1, {}, 1],
-        [2, "PV1 Power", 248, 1, {}, 1],
-        [3, "PV2 Power", 248, 1, {}, 1],
-        [4, "Total PV Power", 248, 1, {}, 1],
-        [5, "Battery Power", 248, 1, {}, 1],
-        [6, "Grid Power", 248, 1, {}, 1],
-        [7, "Local Power Consumption", 248, 1, {}, 1],
-        [8, "Off-grid Power", 248, 1, {}, 1],
-        [10, "Total PV Energy", 243, 29, {}, 1],
-        [11, "To Battery Energy", 243, 29, {}, 1],
-        [12, "From Battery Energy", 243, 29, {}, 1],
-        [13, "To Grid Energy", 243, 29, {}, 1],
-        [14, "From Grid Energy", 243, 29, {}, 1],
-        [15, "Inverter Energy", 243, 29, {}, 1],
-        [16, "Local Energy Consumption", 243, 29, {'EnergyMeterMode':'1' }, 1],
-        [17, "Off-Grid Energy", 243, 29, {}, 1],
-        [20, "Total Grid Energy", 250, 1, {}, 1],
-        [30, "Battery Capacity", 243, 6, {}, 1],
-        [31, "Inverter Temperature", 80, 5, {}, 1],
-        [32, "Battery Temperature", 80, 5, {}, 1],
-        [33, "Run Mode", 243, 19, {}, 1],
-        [34, "Grid Status", 244, 73, {}, 1],
+        # id, name, type, subtype, switchtype, options, used
+        # Power devices
+        [1, "Inverter Power", 248, 1, 0, {}, 1],
+        [2, "PV1 Power", 248, 1, 0, {}, 1],
+        [3, "PV2 Power", 248, 1, 0, {}, 1],
+        [4, "Total PV Power", 248, 1, 0, {}, 1],
+        [5, "Battery Power", 248, 1, 0, {}, 1],
+        [6, "Grid Power", 248, 1, 0, {}, 1],
+        [7, "Local Power Consumption", 248, 1, 0, {}, 1],
+        [8, "Off-grid Power", 248, 1, 0, {}, 1],
+        # Energy devices
+        [10, "Total PV Energy", 243, 29, 0, {}, 1],
+        [11, "To Battery Energy", 243, 29, 0, {}, 1],
+        [12, "From Battery Energy", 243, 29, 0, {}, 1],
+        [13, "To Grid Energy", 243, 29, 0, {}, 1],
+        [14, "From Grid Energy", 243, 29, 0, {}, 1],
+        [15, "Inverter Energy", 243, 29, 0, {}, 1],
+        [16, "Local Energy Consumption", 243, 29, 0, {'EnergyMeterMode':'1' }, 1],
+        [17, "Off-Grid Energy", 243, 29, 0, {}, 1],
+        # Smart meters
+        [20, "Total Grid Energy", 250, 1, 0, {}, 1],
+        # Switches and other info
+        [30, "Battery Capacity", 243, 6, 0, {}, 1],
+        [31, "Inverter Temperature", 80, 5, 0, {}, 1],
+        [32, "Battery Temperature", 80, 5, 0, {}, 1],
+        [33, "Run Mode", 243, 19, 0, {}, 1],
+        [34, "Grid Status", 244, 73, 0, {}, 1],
+        # Remote control devices
+        [50, "Actual Target Power", 243, 31, 0, {'Custom': '1;W'}, 1],
+        [51, "Actual Target Energy", 243, 31, 0, {'Custom': '1;Wh'}, 1],
+        [52, "Actual Target SOC", 243, 6, 0, {}, 1],
+        [53, "Charge / Discharge Power", 243, 31, 0, {'Custom': '1;W'}, 1],
+        [54, "Remote Control Mode", 243, 19, 0, {}, 1],
+        [55, "Remote Control Finished", 244, 73, 0, {}, 1],
+        [56, "Duration Time", 243, 31, 0, {'Custom': '1;s'}, 1],
+        [60, "Control - Power Target", 242, 1, 0, {'ValueStep':'100', 'ValueMin':'-8000', 'ValueMax':'8000', 'ValueUnit':'W'}, 1], 
+        [61, "Control - Energy Target", 242, 1, 0, {'ValueStep':'100', 'ValueMin':'-12000', 'ValueMax':'12000', 'ValueUnit':'Wh'}, 1], 
+        [62, "Control - SOC Target", 242, 1, 0, {'ValueStep':'5', 'ValueMin':'10', 'ValueMax':'100', 'ValueUnit':'%'}, 1],
+        [63, "Control - Charge / Dischrge Power", 242, 1, 0, {'ValueStep':'100', 'ValueMin':'-8000', 'ValueMax':'8000', 'ValueUnit':'W'}, 1], 
+        [64, "Control - Duration Time", 242, 1, 0, {'ValueStep':'1', 'ValueMin':'1', 'ValueMax':'6000', 'ValueUnit':'s'}, 1],
+        [65, "Control - Remote Control Timeout", 242, 1, 0, {'ValueStep':'1', 'ValueMin':'1', 'ValueMax':'6000', 'ValueUnit':'s'}, 1],
+        [66, "Control - Remote Control Mode", 244, 73, 18, {"LevelActions": "||||", "LevelNames": "Disabled|Power|Energy|SOC|Charge Only", "LevelOffHidden": "false", "SelectorStyle": "1" }, 1],
+        [67, "Control - Remote Control Trigger", 244, 73, 9, {}, 1],
     ]
 
     __RUN_MODES = ("Waiting", "Checking", "Normal", "Fault", "Permanent Fault", "Update", "Off-grid waiting", "Off-grid", "Self Testing", "Idle", "Standby")
- 
+    __REMOTECONTROL_MODES = ("Disabled", "Power control", "Energy control", "SOC control", "Push power", "Push power - zero", "self consume", "self consume - charge only")
+
+    __RC_SETTINGS = {
+        'PowerTarget': 0,
+        'EnergyTarget': 0,
+        'SOCTarget': 0,
+        'ChargerPower': 0,
+        'DurationTime': 0,        
+        'TimeOut': 0,        
+        'Mode': 0,
+        }
 
     def __init__(self):
         return
@@ -94,33 +125,106 @@ class BasePlugin:
                     Name=unit[1],
                     Type=unit[2],
                     Subtype=unit[3],
-                    Options=unit[4],
-                    Used=unit[5],
+                    Switchtype=unit[4],
+                    Options=unit[5],
+                    Used=unit[6],
                 ).Create() 
 
+        self.updateDevices()
+    
     def onStop(self):
-        Domoticz.Log("onStop called --> NoOp")
+        Domoticz.Debug("onStop called --> NoOp")
 
     def onHeartbeat(self):
         Domoticz.Debug("onHeartbeat")
-
-        attempCount = 0
-
-        while True:
-            attempCount = attempCount + 1
-            if attempCount > 3:
-                Domoticz.Debug("Connection has not been established.")
-                return
-            inputRegisters = self.getInputRegisters(0, 290, 10)
-            if inputRegisters:
-                break
         
-        Domoticz.Debug("Successful attempt number: " + str(attempCount))
+        self.updateDevices()
 
-        self.updateDevices(inputRegisters)
+    def onCommand(self, Unit, Command, Level):
+        Domoticz.Debug("onCommand")
+        
+        if Unit == 60:
+            if -8000 <= Level <= 8000:
+                self.__RC_SETTINGS['PowerTarget'] = Level
+        elif Unit == 61:
+            if -12000 <= Level <= 12000:
+                self.__RC_SETTINGS['EnergyTarget'] = Level
+        elif Unit == 62:
+            if 10 <= Level <= 100:
+                self.__RC_SETTINGS['SOCTarget'] = Level
+        elif Unit == 63:
+            if -8000 <= Level <= 8000:
+                self.__RC_SETTINGS['ChargerPower'] = Level
+        elif Unit == 64:
+            if 0 <= Level <= 6000:
+                self.__RC_SETTINGS['DurationTime'] = Level
+        elif Unit == 65:
+            if 0 <= Level <= 6000:
+                self.__RC_SETTINGS['TimeOut'] = Level
+        elif Unit == 66:
+            if Level in [0, 10, 20, 30, 40]: 
+                self.__RC_SETTINGS['Mode'] = Level
+        elif Unit == 67:
+            self.startRemoteControl()
+            time.sleep(3)
+            self.updateDevices()
+            return
+        
+        self.updateLocalDevices()
     
+    def startRemoteControl(self):
+        Domoticz.Debug("Starting ModBus Remote Control.")
+        
+        builder = BinaryPayloadBuilder(byteorder=Endian.BIG, wordorder=Endian.LITTLE)
+        modes = (0, 1, 2, 3, 7)
+        mode = modes[int(int(self.__RC_SETTINGS['Mode'])/10)]
+        
+        builder.reset()
+        builder.add_16bit_uint(mode)                                            # Remote Control Mode
+        builder.add_16bit_uint(1)                                               # TargetSet type = SET
+        builder.add_32bit_int(int(self.__RC_SETTINGS['PowerTarget']))           # Target Active Power
+        builder.add_32bit_int(0)                                                # Target Reactive Power
+        builder.add_16bit_uint(int(self.__RC_SETTINGS['DurationTime']))         # Time of Duration
+        builder.add_16bit_uint(int(self.__RC_SETTINGS['SOCTarget']))            # Target SOC
+        builder.add_32bit_uint(int(self.__RC_SETTINGS['EnergyTarget']))         # Target Energy
+        builder.add_32bit_int(int(self.__RC_SETTINGS['ChargerPower']))          # Charge / Discharge Power
+        builder.add_16bit_uint(int(self.__RC_SETTINGS['TimeOut']))              # Remote Control Timeout
 
-    def updateDevices(self, registers):
+        payload = builder.to_registers()
+
+        try:
+            self.setMultipleRegisters(0x007c, payload)
+            return True
+        except:
+            Domoticz.Debug("Problem to write Multiple Registers via Modbus")
+            return False
+
+    def updateDevices(self):
+        inputRegisters = self.getInputRegisters(0, 290, 10)
+        if inputRegisters:
+            Domoticz.Debug("Updating devices from Input Registers")
+            self.updateModBusDevices(inputRegisters)
+
+        Domoticz.Debug("Updating devices from Local array")
+        self.updateLocalDevices()
+
+    def updateLocalDevices(self):
+        val = self.__RC_SETTINGS['PowerTarget']
+        UpdateDevice(60,0,"{}".format(val))
+        val = self.__RC_SETTINGS['EnergyTarget']
+        UpdateDevice(61,0,"{}".format(val))
+        val = self.__RC_SETTINGS['SOCTarget']
+        UpdateDevice(62,0,"{}".format(val))
+        val = self.__RC_SETTINGS['ChargerPower']
+        UpdateDevice(63,0,"{}".format(val))
+        val = self.__RC_SETTINGS['DurationTime']
+        UpdateDevice(64,0,"{}".format(val))
+        val = self.__RC_SETTINGS['TimeOut']
+        UpdateDevice(65,0,"{}".format(val))
+        val = self.__RC_SETTINGS['Mode']
+        UpdateDevice(66,0,"{}".format(val))
+
+    def updateModBusDevices(self, registers):
         decoder = BinaryPayloadDecoder.fromRegisters(registers, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
 
         # Output Power / Energy
@@ -157,17 +261,21 @@ class BasePlugin:
         decoder.reset()
         decoder.skip_bytes(0x0016 * 2)
         valP = decoder.decode_16bit_int()
+        decoder.reset()
+        decoder.skip_bytes(0x0021 * 2)
+        valE1 = decoder.decode_32bit_uint() * 100
+        decoder.reset()
+        decoder.skip_bytes(0x001d * 2)
+        valE2 = decoder.decode_32bit_uint() * 100
         UpdateDevice(5,0,"{}".format(valP))
         if valP >= 0:
-            decoder.reset()
-            decoder.skip_bytes(0x0021 * 2)
-            valE = decoder.decode_32bit_uint() * 100
-            UpdateDevice(11,0,"{};{}".format(valP, valE))
-        if valP <= 0:
-            decoder.reset()
-            decoder.skip_bytes(0x001d * 2)
-            valE = decoder.decode_32bit_uint() * 100
-            UpdateDevice(12,0,"{};{}".format(abs(valP), valE))
+            valP1 = valP
+            valP2 = 0
+        elif valP < 0:
+            valP1 = 0
+            valP2 = abs(valP)
+        UpdateDevice(11,0,"{};{}".format(valP1, valE1))
+        UpdateDevice(12,0,"{};{}".format(valP2, valE2))
 
         # Grid Power / Energy
         decoder.reset()
@@ -202,20 +310,14 @@ class BasePlugin:
 
         # Off-Grid Power / Energy
         decoder.reset()
-        decoder.skip_bytes(0x001a * 2)
-        val = decoder.decode_16bit_uint()
-        #if val > 1:
-        decoder.reset()
         decoder.skip_bytes(0x004e * 2)
         valP = decoder.decode_16bit_int()
-        #else:
-        #    valP = 0
         decoder.reset()
         decoder.skip_bytes(0x008e * 2)
         valE = decoder.decode_32bit_int() * 100
         UpdateDevice(8,0,"{}".format(valP))
         UpdateDevice(17,0,"{};{}".format(valP, valE))
-
+        
         # Battery Capacity
         decoder.reset()
         decoder.skip_bytes(0x001c * 2)
@@ -243,7 +345,7 @@ class BasePlugin:
         else:
             UpdateDevice(33,0,"Unknown mode")
         
-        # Grid Status
+        # Grid status
         decoder.reset()
         decoder.skip_bytes(0x001a * 2)
         val = decoder.decode_16bit_uint()
@@ -251,6 +353,54 @@ class BasePlugin:
             UpdateDevice(34,0,"Off")
         else:
             UpdateDevice(34,1,"On")
+
+        # Remote control - Target Power
+        decoder.reset()
+        decoder.skip_bytes(0x0102 * 2)
+        valP = decoder.decode_32bit_int()
+        UpdateDevice(50,0,"{}".format(valP))
+
+        # Remote control - Target Energy
+        decoder.reset()
+        decoder.skip_bytes(0x0112 * 2)
+        valE = decoder.decode_32bit_int()
+        UpdateDevice(51,0,"{}".format(valE))
+
+        # Remote control - Target SOC
+        decoder.reset()
+        decoder.skip_bytes(0x011b * 2)
+        val = decoder.decode_16bit_int()
+        UpdateDevice(52,0,"{}".format(val))
+        
+        # Remote control - Charge / Discharge Power
+        decoder.reset()
+        decoder.skip_bytes(0x0114 * 2)
+        valP = decoder.decode_32bit_int()
+        UpdateDevice(53,0,"{}".format(valP))
+
+        # Remote Contlor Mode
+        decoder.reset()
+        decoder.skip_bytes(0x0100 * 2)
+        val = decoder.decode_16bit_uint()
+        if 0 <= val <= 10:
+            UpdateDevice(54,0,"{}".format(self.__REMOTECONTROL_MODES[val]))
+        else:
+            UpdateDevice(54,0,"Unknown mode")
+        
+        # Remote Control Status
+        decoder.reset()
+        decoder.skip_bytes(0x0101 * 2)
+        val = decoder.decode_16bit_uint()
+        if val > 0:
+            UpdateDevice(55,1,"On")
+        else:
+            UpdateDevice(55,0,"Off")
+
+        # Remote control - Duration Time
+        decoder.reset()
+        decoder.skip_bytes(0x011a * 2)
+        val = decoder.decode_16bit_uint()
+        UpdateDevice(56,0,"{}".format(val))
 
     def getInputRegisters(self, start=0, length=100, step=10):
         Domoticz.Debug("Connecting to: " + str(Parameters["Address"]) + ":" + str(Parameters["Port"]))
@@ -274,7 +424,6 @@ class BasePlugin:
                     step2 = res
                 else:
                     break
-            Domoticz.Debug("Start: " + str(start) + ", cycle: " + str(cycle) + "step: " + str(step) + ", step2: " + str(step2)) 
             try:
                 result = client.read_input_registers((start + cycle * step), step2)
                 registers = registers + result.registers
@@ -287,6 +436,27 @@ class BasePlugin:
 
         client.close()
         return(registers)
+    
+    def setMultipleRegisters(self, start, payload):
+        Domoticz.Debug("Connecting to: " + str(Parameters["Address"]) + ":" + str(Parameters["Port"]))
+        
+        try:
+            client = ModbusTcpClient(str(Parameters["Address"]), int(Parameters["Port"]))
+            client.connect()
+        except:
+            Domoticz.Debug("Connection timeout.")
+            client.close()
+            return False
+        
+        try:
+            result = client.write_registers(start, payload)
+        except:
+            Domoticz.Debug("Unable to write multiple registers.")
+            client.close()
+            return False
+
+        client.close()
+        return(True)
 
         
 global _plugin
@@ -303,6 +473,10 @@ def onStop():
 def onHeartbeat():
     global _plugin
     _plugin.onHeartbeat()
+
+def onCommand(Unit, Command, Level, Color):
+    global _plugin
+    _plugin.onCommand(Unit, Command, Level)
 
 
 ################################################################################
