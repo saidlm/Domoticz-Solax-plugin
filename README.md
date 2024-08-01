@@ -20,7 +20,7 @@ All the information which are collected by default version are visible on pictur
 ```
 sudo pip3 install -U pymodbus
 ```
-The plugin was tested with Domoticz version 2023.2 and pymodbus 3.5.2
+The current version of the plugin was tested with Domoticz version 2024.4, python 3.11.2, libpython 3.11 and pymodbus 3.6.8
 
 ## Installation
 * Place the folder inside Domoticz plugin folder e.g. :
