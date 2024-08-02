@@ -11,6 +11,7 @@
     <params>
         <param field="Address" label="Inverter IP Address" width="200px" required="true" default="5.8.8.8"/>
         <param field="Port" label="Port" width="40px" required="true" default="502"/>
+        <param field="Mode2" label="Inverter ModBus Unit ID" width="20px" required="true" default="1"/>
         <param field="Mode1" label="Update interval (seconds)" width="20px" default="10" />
         <param field="Mode6" label="Debug" width="80px">
             <options>
@@ -113,6 +114,14 @@ class BasePlugin:
                 self.updateInterval = 10
         except:
             self.updateInterval = 10
+
+        try:
+            if 1 <=int(Parameters["Mode2"]) <= 255:
+                self.unit_id = int(Parameters["Mode2"])
+            else: 
+                self.unit_id = 1
+        except:
+            self.unit_id = 1
 
         Domoticz.Heartbeat(int(self.updateInterval))
         Domoticz.Debug("Update interval is set to: {} second(s)".format(str(self.updateInterval)))
@@ -407,7 +416,7 @@ class BasePlugin:
         (cycles, res) = divmod(length, step)
         
         try:
-            client = ModbusTcpClient(str(Parameters["Address"]), int(Parameters["Port"]))
+            client = ModbusTcpClient(host = str(Parameters["Address"]), port = int(Parameters["Port"]), unit_id = self.unit_id)
             client.connect()
         except:
             Domoticz.Debug("Connection timeout.")
@@ -441,7 +450,7 @@ class BasePlugin:
         Domoticz.Debug("Connecting to: " + str(Parameters["Address"]) + ":" + str(Parameters["Port"]))
         
         try:
-            client = ModbusTcpClient(str(Parameters["Address"]), int(Parameters["Port"]))
+            client = ModbusTcpClient(host = str(Parameters["Address"]), port = int(Parameters["Port"]), unit_id = self.unit_id)
             client.connect()
         except:
             Domoticz.Debug("Connection timeout.")
