@@ -69,8 +69,9 @@ class BasePlugin:
         [52, "Actual Target SOC", 243, 6, 0, {}, 1],
         [53, "Charge / Discharge Power", 243, 31, 0, {'Custom': '1;W'}, 1],
         [54, "Remote Control Mode", 243, 19, 0, {}, 1],
-        [55, "Remote Control Finished", 244, 73, 0, {}, 1],
-        [56, "Duration Time", 243, 31, 0, {'Custom': '1;s'}, 1],
+        [55, "Remote Control Timeout Active", 244, 73, 0, {}, 1],
+        [56, "Remote Control Duration Time", 243, 31, 0, {'Custom': '1;s'}, 1],
+        [57, "Remote Control Timeout", 243, 31, 0, {'Custom': '1;s'}, 1],
         [60, "Control - Power Target", 242, 1, 0, {'ValueStep':'100', 'ValueMin':'-8000', 'ValueMax':'8000', 'ValueUnit':'W'}, 1], 
         [61, "Control - Energy Target", 242, 1, 0, {'ValueStep':'100', 'ValueMin':'-12000', 'ValueMax':'12000', 'ValueUnit':'Wh'}, 1], 
         [62, "Control - SOC Target", 242, 1, 0, {'ValueStep':'5', 'ValueMin':'10', 'ValueMax':'100', 'ValueUnit':'%'}, 1],
@@ -411,6 +412,12 @@ class BasePlugin:
         val = decoder.decode_16bit_uint()
         UpdateDevice(56,0,"{}".format(val))
 
+        # Remote control - TimeOut
+        decoder.reset()
+        decoder.skip_bytes(0x011e * 2)
+        val = decoder.decode_16bit_uint()
+        UpdateDevice(57,0,"{}".format(val))
+
     def getInputRegisters(self, start=0, length=100, step=10):
         Domoticz.Debug("Connecting to: " + str(Parameters["Address"]) + ":" + str(Parameters["Port"]))
         (cycles, res) = divmod(length, step)
@@ -460,6 +467,7 @@ class BasePlugin:
         try:
             result = client.write_registers(start, payload)
         except:
+            Domoticz.Debug(result) 
             Domoticz.Debug("Unable to write multiple registers.")
             client.close()
             return False
