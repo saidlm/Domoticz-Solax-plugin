@@ -1,5 +1,7 @@
 # Domoticz-Solax-plugin
 It is primary developed to be able to monitor Solax inverter from Domoticz software via Mod-bus over TCP/IP. Base on the requests from users I decided to implement also control functionality to the plugin. Finally current version support monitoring and remote control as well. The implementation works with registers which are dealing with real-time operation only. Basically it means that there are no configuration functions which are writing data into EEPROM of the device as a part of permanent configuration. Finally it means that there is no issue with limited number od write cycles to EEPROM. In the other hand if device is restarted remote control configuration will disappear.
+
+## Monitoring
 All the standard operational information which are collected by default version are visible on pictures below.
 
 ### Utility tab
