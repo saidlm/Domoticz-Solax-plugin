@@ -18,7 +18,7 @@ Remote control functions are controlled by Domoticz devices on Utility tab which
 
 ![Switches tab](images/Domoticz-Solax_6.png)
 
-Mode selection of the remote control a trigger button can be find on Switches tab. See picture below.
+Mode selection of the remote control and trigger button can be find on Switches tab. See picture below.
 
 ![Switches tab](images/Domoticz-Solax_7.png)
 
