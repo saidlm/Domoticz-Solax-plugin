@@ -24,7 +24,7 @@ Mode selection of the remote control a trigger button can be find on Switches ta
 
 The whole process can be monitored via number od Domoticz devices shown on picture below.
 
-![Switches tab](images/Domoticz-Solax_3.png)
+![Switches tab](images/Domoticz-Solax_5.png)
 
 ## Prerequisites
 * Running Domoticz software
