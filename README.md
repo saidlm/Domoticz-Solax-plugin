@@ -14,6 +14,8 @@ All the standard operational information which are collected by default version 
 
 ![Switches tab](images/Domoticz-Solax_3.png)
 
+## Remote Control
+
 Remote control functions are controlled by Domoticz devices on Utility tab which shown on picture.
 
 ![Switches tab](images/Domoticz-Solax_6.png)
@@ -25,6 +27,8 @@ Mode selection of the remote control and trigger button can be find on Switches 
 The whole process can be monitored via number od Domoticz devices shown on picture below.
 
 ![Switches tab](images/Domoticz-Solax_5.png)
+
+Detail description of remote control modes is on: (https://kb.solaxpower.com/solution/detail/2c9fa4148ecd09eb018edf67a87b01d2)
 
 ## Prerequisites
 * Running Domoticz software
