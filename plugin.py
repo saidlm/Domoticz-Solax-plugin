@@ -388,7 +388,7 @@ class BasePlugin:
         valP = decoder.decode_32bit_int()
         UpdateDevice(53,0,"{}".format(valP))
 
-        # Remote Contlor Mode
+        # Remote Control Mode
         decoder.reset()
         decoder.skip_bytes(0x0100 * 2)
         val = decoder.decode_16bit_uint()
@@ -441,7 +441,7 @@ class BasePlugin:
                 else:
                     break
             try:
-                result = client.read_input_registers((start + cycle * step), step2)
+                result = client.read_input_registers((start + cycle * step), step2, self.unit_id)
                 registers = registers + result.registers
             except:
                 Domoticz.Debug(result) 
