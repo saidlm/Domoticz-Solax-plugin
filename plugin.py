@@ -465,7 +465,7 @@ class BasePlugin:
             return False
         
         try:
-            result = client.write_registers(start, payload)
+            result = client.write_registers(start, payload, self.unit_id)
         except:
             Domoticz.Debug(result) 
             Domoticz.Debug("Unable to write multiple registers.")
