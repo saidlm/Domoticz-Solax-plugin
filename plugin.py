@@ -95,6 +95,14 @@ class BasePlugin:
         'Mode': 0,
         }
 
+    __SETTINGS = {
+        'address': '5.8.8.8',
+        'port': '502',
+        'updateInterval': 10,
+        'unitId': 1,
+        'maxPower': 8000,
+        }
+
     def __init__(self):
         return
 
@@ -109,23 +117,33 @@ class BasePlugin:
 
         # Parse configuration
         try:
-            if 1 <=int(Parameters["Mode1"]) <= 600:
-                self.updateInterval = int(Parameters["Mode1"])
-            else: 
-                self.updateInterval = 10
+            self.__SETTINGS['address'] = str(Parameters["Address"])
         except:
-            self.updateInterval = 10
+            self.__SETTINGS['address'] = '5.8.8.8'
+        
+        try:
+            self.__SETTINGS['port'] = int(Parameters["Port"])
+        except:
+            self.__SETTINGS['port'] = 502
+
+        try:
+            if 1 <=int(Parameters["Mode1"]) <= 600:
+                self.__SETTINGS['updateInterval'] = int(Parameters["Mode1"])
+            else: 
+                self.__SETTINGS['updateInterval'] = 10
+        except:
+            self.__SETTINGS['updateInterval'] = 10
 
         try:
             if 1 <=int(Parameters["Mode2"]) <= 255:
                 self.unit_id = int(Parameters["Mode2"])
             else: 
-                self.unit_id = 1
+                self.__SETTINGS['unitId'] = 1
         except:
-            self.unit_id = 1
+            self.__SETTINGS['unitId'] = 1
 
-        Domoticz.Heartbeat(int(self.updateInterval))
-        Domoticz.Debug("Update interval is set to: {} second(s)".format(str(self.updateInterval)))
+        Domoticz.Heartbeat(int(self.__SETTINGS['updateInterval']))
+        Domoticz.Debug("Update interval is set to: {} second(s)".format(str(self.__SETTINGS['updateInterval'])))
 
         # Create devices
         for unit in self.__UNITS:
@@ -139,6 +157,31 @@ class BasePlugin:
                     Options=unit[5],
                     Used=unit[6],
                 ).Create() 
+
+        # Read Inverter parameters
+        Domoticz.Debug("Connecting to: " + self.__SETTINGS['address'] + ":" + str(self.__SETTINGS['port']) + ", unit ID:" + str(self.__SETTINGS['unitId']))
+
+        try:
+            client = ModbusTcpClient(host = self.__SETTINGS['address'], port = self.__SETTINGS['port'], unit_id = self.__SETTINGS['unitId'])
+            client.connect()
+        except:
+            Domoticz.Debug("Connection timeout")
+            client.close()
+            return
+
+        try:
+            result = client.read_holding_registers((0x00ba), 1, self.__SETTINGS['unitId'])
+        except:
+            Domoticz.Debug(result)
+            Domoticz.Debug("Unable to read holding registers.")
+            client.close()
+            return
+        
+        decoder = BinaryPayloadDecoder.fromRegisters(result.registers, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
+        self.__SETTINGS['maxPower'] = Domoticz.Debug(decoder.decode_16bit_uint())
+        
+        # Change devices' option
+        Devices[60].Update(nValue=0, sValue="0", Options={'ValueUnit':'W', 'ValueStep':'100','ValueMin':'-' + str(self.__SETTINGS['maxPower']), 'ValueMax':str(self.__SETTINGS['maxPower'])})
 
         self.updateDevices()
     
@@ -359,7 +402,7 @@ class BasePlugin:
         decoder.reset()
         decoder.skip_bytes(0x001a * 2)
         val = decoder.decode_16bit_uint()
-        if val > 1:
+        if val > 0:
             UpdateDevice(34,0,"Off")
         else:
             UpdateDevice(34,1,"On")
@@ -379,7 +422,7 @@ class BasePlugin:
         # Remote control - Target SOC
         decoder.reset()
         decoder.skip_bytes(0x011b * 2)
-        val = decoder.decode_16bit_int()
+        val = decoder.decode_16bit_uint()
         UpdateDevice(52,0,"{}".format(val))
         
         # Remote control - Charge / Discharge Power
@@ -419,11 +462,11 @@ class BasePlugin:
         UpdateDevice(57,0,"{}".format(val))
 
     def getInputRegisters(self, start=0, length=100, step=10):
-        Domoticz.Debug("Connecting to: " + str(Parameters["Address"]) + ":" + str(Parameters["Port"]))
+        Domoticz.Debug("Connecting to: " + self.__SETTINGS['address'] + ":" + str(self.__SETTINGS['port']) + ", unit ID:" + str(self.__SETTINGS['unitId']))
         (cycles, res) = divmod(length, step)
         
         try:
-            client = ModbusTcpClient(host = str(Parameters["Address"]), port = int(Parameters["Port"]), unit_id = self.unit_id)
+            client = ModbusTcpClient(host = self.__SETTINGS['address'], port = self.__SETTINGS['port'], unit_id = self.__SETTINGS['unitId'])
             client.connect()
         except:
             Domoticz.Debug("Connection timeout.")
@@ -441,7 +484,7 @@ class BasePlugin:
                 else:
                     break
             try:
-                result = client.read_input_registers((start + cycle * step), step2, self.unit_id)
+                result = client.read_input_registers((start + cycle * step), step2, self.__SETTINGS['unitId'])
                 registers = registers + result.registers
             except:
                 Domoticz.Debug(result) 
@@ -454,10 +497,10 @@ class BasePlugin:
         return(registers)
     
     def setMultipleRegisters(self, start, payload):
-        Domoticz.Debug("Connecting to: " + str(Parameters["Address"]) + ":" + str(Parameters["Port"]))
+        Domoticz.Debug("Connecting to: " + self.__SETTINGS['address'] + ":" + str(self.__SETTINGS['port']) + ", unit ID:" + str(self.__SETTINGS['unitId']))
         
         try:
-            client = ModbusTcpClient(host = str(Parameters["Address"]), port = int(Parameters["Port"]), unit_id = self.unit_id)
+            client = ModbusTcpClient(host = self.__SETTINGS['address'], port = self.__SETTINGS['port'], unit_id = self.__SETTINGS['unitId'])
             client.connect()
         except:
             Domoticz.Debug("Connection timeout.")
@@ -465,7 +508,7 @@ class BasePlugin:
             return False
         
         try:
-            result = client.write_registers(start, payload, self.unit_id)
+            result = client.write_registers(start, payload, self.__SETTINGS['unitId'])
         except:
             Domoticz.Debug(result) 
             Domoticz.Debug("Unable to write multiple registers.")
