@@ -159,29 +159,16 @@ class BasePlugin:
                 ).Create() 
 
         # Read Inverter parameters
-        Domoticz.Debug("Connecting to: " + self.__SETTINGS['address'] + ":" + str(self.__SETTINGS['port']) + ", unit ID:" + str(self.__SETTINGS['unitId']))
-
-        try:
-            client = ModbusTcpClient(host = self.__SETTINGS['address'], port = self.__SETTINGS['port'], unit_id = self.__SETTINGS['unitId'])
-            client.connect()
-        except:
-            Domoticz.Debug("Connection timeout")
-            client.close()
-            return
-
-        try:
-            result = client.read_holding_registers((0x00ba), 1, self.__SETTINGS['unitId'])
-        except:
-            Domoticz.Debug(result)
-            Domoticz.Debug("Unable to read holding registers.")
-            client.close()
-            return
+        holdingRegisters = self.getHoldingRegisters(0, 255, 10)
         
-        decoder = BinaryPayloadDecoder.fromRegisters(result.registers, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
-        self.__SETTINGS['maxPower'] = Domoticz.Debug(decoder.decode_16bit_uint())
+        decoder = BinaryPayloadDecoder.fromRegisters(holdingRegisters, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
+        decoder.reset()
+        decoder.skip_bytes(0x00ba * 2)
+        self.__SETTINGS['maxPower'] = decoder.decode_16bit_uint()
         
         # Change devices' option
-        Devices[60].Update(nValue=0, sValue="0", Options={'ValueUnit':'W', 'ValueStep':'100','ValueMin':'-' + str(self.__SETTINGS['maxPower']), 'ValueMax':str(self.__SETTINGS['maxPower'])})
+        Devices[60].Update(nValue=0, sValue="0", Options={'ValueStep':'100','ValueMin':'-' + str(self.__SETTINGS['maxPower']), 'ValueMax':str(self.__SETTINGS['maxPower']), 'ValueUnit':'W'})
+        Devices[63].Update(nValue=0, sValue="0", Options={'ValueStep':'100','ValueMin':'-' + str(self.__SETTINGS['maxPower']), 'ValueMax':str(self.__SETTINGS['maxPower']), 'ValueUnit':'W'})
 
         self.updateDevices()
     
@@ -197,7 +184,7 @@ class BasePlugin:
         Domoticz.Debug("onCommand")
         
         if Unit == 60:
-            if -8000 <= Level <= 8000:
+            if -(self.__SETTINGS['maxPower']) <= Level <= self.__SETTINGS['maxPower']:
                 self.__RC_SETTINGS['PowerTarget'] = Level
         elif Unit == 61:
             if -12000 <= Level <= 12000:
@@ -206,7 +193,7 @@ class BasePlugin:
             if 10 <= Level <= 100:
                 self.__RC_SETTINGS['SOCTarget'] = Level
         elif Unit == 63:
-            if -8000 <= Level <= 8000:
+            if -(self.__SETTINGS['maxPower']) <= Level <= self.__SETTINGS['maxPower']:
                 self.__RC_SETTINGS['ChargerPower'] = Level
         elif Unit == 64:
             if 0 <= Level <= 6000:
@@ -489,6 +476,41 @@ class BasePlugin:
             except:
                 Domoticz.Debug(result) 
                 Domoticz.Debug("Unable to read input registers.")
+                client.close()
+                return False
+            cycle = cycle + 1
+
+        client.close()
+        return(registers)
+
+    def getHoldingRegisters(self, start=0, length=100, step=10):
+        Domoticz.Debug("Connecting to: " + self.__SETTINGS['address'] + ":" + str(self.__SETTINGS['port']) + ", unit ID:" + str(self.__SETTINGS['unitId']))
+        (cycles, res) = divmod(length, step)
+        
+        try:
+            client = ModbusTcpClient(host = self.__SETTINGS['address'], port = self.__SETTINGS['port'], unit_id = self.__SETTINGS['unitId'])
+            client.connect()
+        except:
+            Domoticz.Debug("Connection timeout.")
+            client.close()
+            return False
+
+        cycle = 0
+        step2 = step
+        registers = []
+
+        while cycle <= cycles:
+            if cycle == cycles:
+                if res > 0:
+                    step2 = res
+                else:
+                    break
+            try:
+                result = client.read_holding_registers((start + cycle * step), step2, self.__SETTINGS['unitId'])
+                registers = registers + result.registers
+            except:
+                Domoticz.Debug(result) 
+                Domoticz.Debug("Unable to read holding registers.")
                 client.close()
                 return False
             cycle = cycle + 1
