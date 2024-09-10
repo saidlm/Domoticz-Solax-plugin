@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 #
 # Name: Solax Inverter MODBUS plugin
-# Version: 0.0.2
+# Version: 0.1.0
 # Author: Martin Saidl
 #
 
 """
-<plugin key="SolaxMODBUS" name="Solax Inverter MODBUS plugin" author="Martin Saidl" version="0.0.2" wikilink="https://github.com/saidlm/Domoticz-Solax-Inverter-plugin">
+<plugin key="SolaxMODBUS" name="Solax Inverter MODBUS plugin" author="Martin Saidl" version="0.1.0" wikilink="https://github.com/saidlm/Domoticz-Solax-Inverter-plugin">
     <params>
         <param field="Address" label="Inverter IP Address" width="200px" required="true" default="5.8.8.8"/>
         <param field="Port" label="Port" width="40px" required="true" default="502"/>
@@ -142,9 +142,6 @@ class BasePlugin:
         except:
             self.__SETTINGS['unitId'] = 1
 
-        Domoticz.Heartbeat(int(self.__SETTINGS['updateInterval']))
-        Domoticz.Debug("Update interval is set to: {} second(s)".format(str(self.__SETTINGS['updateInterval'])))
-
         # Create devices
         for unit in self.__UNITS:
             if unit[0] not in Devices:
@@ -159,6 +156,7 @@ class BasePlugin:
                 ).Create() 
 
         # Read Inverter parameters
+        Domoticz.Debug("Reading configuration information from inverter.")
         holdingRegisters = self.getHoldingRegisters(0, 255, 10)
         
         decoder = BinaryPayloadDecoder.fromRegisters(holdingRegisters, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
@@ -166,9 +164,14 @@ class BasePlugin:
         decoder.skip_bytes(0x00ba * 2)
         self.__SETTINGS['maxPower'] = decoder.decode_16bit_uint()
         
-        # Change devices' option
+        # Change devices' options
+        Domoticz.Debug("Maximum inverter power is set to: {} Watt(s)".format(str(self.__SETTINGS['maxPower'])))
         Devices[60].Update(nValue=0, sValue="0", Options={'ValueStep':'100','ValueMin':'-' + str(self.__SETTINGS['maxPower']), 'ValueMax':str(self.__SETTINGS['maxPower']), 'ValueUnit':'W'})
         Devices[63].Update(nValue=0, sValue="0", Options={'ValueStep':'100','ValueMin':'-' + str(self.__SETTINGS['maxPower']), 'ValueMax':str(self.__SETTINGS['maxPower']), 'ValueUnit':'W'})
+
+        # Heartbeat interval setup
+        Domoticz.Debug("Update interval is set to: {} second(s)".format(str(self.__SETTINGS['updateInterval'])))
+        Domoticz.Heartbeat(int(self.__SETTINGS['updateInterval']))
 
         self.updateDevices()
     
