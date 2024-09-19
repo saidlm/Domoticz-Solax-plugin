@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 #
 # Name: Solax Inverter MODBUS plugin
-# Version: 0.1.0
+# Version: 0.1.1
 # Author: Martin Saidl
 #
 
 """
-<plugin key="SolaxMODBUS" name="Solax Inverter MODBUS plugin" author="Martin Saidl" version="0.1.0" wikilink="https://github.com/saidlm/Domoticz-Solax-Inverter-plugin">
+<plugin key="SolaxMODBUS" name="Solax Inverter MODBUS plugin" author="Martin Saidl" version="0.1.1" wikilink="https://github.com/saidlm/Domoticz-Solax-Inverter-plugin">
     <params>
         <param field="Address" label="Inverter IP Address" width="200px" required="true" default="5.8.8.8"/>
         <param field="Port" label="Port" width="40px" required="true" default="502"/>
@@ -34,6 +34,21 @@ import time
 
 
 class BasePlugin:
+
+    # Global section
+    # ==============
+
+    __SETTINGS = {
+        'address': '5.8.8.8',
+        'port': '502',
+        'updateInterval': 10,
+        'unitId': 1,
+        'maxPower': 8000,
+        'evCharger': False,
+        }
+
+    # Inverter section
+    # ================
 
     __UNITS = [
         # id, name, type, subtype, switchtype, options, used
@@ -95,14 +110,30 @@ class BasePlugin:
         'Mode': 0,
         }
 
-    __SETTINGS = {
-        'address': '5.8.8.8',
-        'port': '502',
-        'updateInterval': 10,
-        'unitId': 1,
-        'maxPower': 8000,
-        }
+    # EV Charger section
+    # ==================
 
+    __EV_UNITS = [
+        # id, name, type, subtype, switchtype, options, used
+        # Power devices
+        [100, "EV Charger Power", 248, 1, 0, {}, 1],
+        # Energy devices
+        [110, "EV Charger Energy", 243, 29, 0, {}, 1],
+        # Switches 
+        [120, "EV Charger  State", 243, 19, 0, {}, 1],
+        [121, "EV Charger run Mode", 244, 73, 18, {"LevelActions": "|||", "LevelNames": "Stop|Fast|Eco|Green", "LevelOffHidden": "false", "SelectorStyle": "0" }, 1],
+        # Temperature, Current etc
+        [130, "EV Charger Temperature", 80, 5, 0, {}, 1],
+        [131, "EV Charger Max Current", 242, 1, 0, {'ValueStep':'0.1', 'ValueMin':'0', 'ValueMax':'32', 'ValueUnit':'A'}, 1],
+
+    ]
+
+    __EV_STATE = ("Avaiable", "Preparing", "Charging", "Finishing", "Faulted", "Unavaiable", "Reserved", "Suspended EV", "Suspended EVSE", "Update", "Card Activation")
+
+
+    # Plugin Code
+    # ===========
+    
     def __init__(self):
         return
 
@@ -134,15 +165,47 @@ class BasePlugin:
         except:
             self.__SETTINGS['updateInterval'] = 10
 
+        Domoticz.Debug("Parameter Mode2 - Mod-Bus slave ID: {}".format(Parameters["Mode2"]))
         try:
             if 1 <=int(Parameters["Mode2"]) <= 255:
-                self.unit_id = int(Parameters["Mode2"])
+                self.__SETTINGS['unitId'] = int(Parameters["Mode2"])
             else: 
                 self.__SETTINGS['unitId'] = 1
         except:
             self.__SETTINGS['unitId'] = 1
 
-        # Create devices
+        # Read Inverter parameters
+        Domoticz.Debug("Reading configuration information from inverter.")
+
+        while True:
+            holdingRegisters = self.getHoldingRegisters(0, 374, 50)
+            if holdingRegisters:
+                break
+            Domoticz.Debug("There is issue to read Inverter configuration. Will ty it again after 10s.")
+            time.sleep(10)
+
+        decoder = BinaryPayloadDecoder.fromRegisters(holdingRegisters, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
+        
+        # Inverter type - max power
+        decoder.reset()
+        decoder.skip_bytes(0x00ba * 2)
+        self.__SETTINGS['maxPower'] = decoder.decode_16bit_uint()
+
+        # EV Charger check
+        decoder.reset()
+        decoder.skip_bytes(0x013e * 2)
+        val = decoder.decode_16bit_uint()
+        
+        Domoticz.Debug("External devices ModBus info: {}.".format(val))
+
+        if val in [1, 4, 6]:
+            self.__SETTINGS['evCharger'] = True
+            Domoticz.Debug("EV Charger is connected.")
+        else:
+            self.__SETTINGS['evCharger'] = False
+            Domoticz.Debug("EV Charger is NOT connected.")
+
+        # Create Inverter devices
         for unit in self.__UNITS:
             if unit[0] not in Devices:
                 Domoticz.Device(
@@ -154,16 +217,21 @@ class BasePlugin:
                     Options=unit[5],
                     Used=unit[6],
                 ).Create() 
+        
+        # Create EV Charger devices
+        if self.__SETTINGS['evCharger']:
+            for unit in self.__EV_UNITS:
+                if unit[0] not in Devices:
+                    Domoticz.Device(
+                        Unit=unit[0],
+                        Name=unit[1],
+                        Type=unit[2],
+                        Subtype=unit[3],
+                        Switchtype=unit[4],
+                        Options=unit[5],
+                        Used=unit[6],
+                    ).Create() 
 
-        # Read Inverter parameters
-        Domoticz.Debug("Reading configuration information from inverter.")
-        holdingRegisters = self.getHoldingRegisters(0, 255, 10)
-        
-        decoder = BinaryPayloadDecoder.fromRegisters(holdingRegisters, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
-        decoder.reset()
-        decoder.skip_bytes(0x00ba * 2)
-        self.__SETTINGS['maxPower'] = decoder.decode_16bit_uint()
-        
         # Change devices' options
         Domoticz.Debug("Maximum inverter power is set to: {} Watt(s)".format(str(self.__SETTINGS['maxPower'])))
         Devices[60].Update(nValue=0, sValue="0", Options={'ValueStep':'100','ValueMin':'-' + str(self.__SETTINGS['maxPower']), 'ValueMax':str(self.__SETTINGS['maxPower']), 'ValueUnit':'W'})
@@ -239,16 +307,41 @@ class BasePlugin:
             self.setMultipleRegisters(0x007c, payload)
             return True
         except:
-            Domoticz.Debug("Problem to write Multiple Registers via Modbus")
+            Domoticz.Debug("Problem to write Multiple Registers via Modbus.")
             return False
 
     def updateDevices(self):
-        inputRegisters = self.getInputRegisters(0, 290, 10)
+        # Inverter data
+        Domoticz.Debug("Updating devices from Inverter Input Registers.")
+        inputRegisters = self.getInputRegisters(0, 290, 50)
         if inputRegisters:
-            Domoticz.Debug("Updating devices from Input Registers")
-            self.updateModBusDevices(inputRegisters)
+            Domoticz.Debug("Done.")
+            self.updateInverterModBusDevices(inputRegisters)
+        else:
+            Domoticz.Debug("Failed!")
+        
+        # EV Charger data
+        Domoticz.Debug("Updating devices from EV Charger Input Registers.")
+        if self.__SETTINGS['evCharger']:
+            time.sleep(2)
+            inputRegisters = self.getInputRegisters(0x1000, 30, 30)
+            if inputRegisters:
+                Domoticz.Debug("Done.")
+                self.updateEVChargerModBusDevicesInput(inputRegisters)
+            else:
+                Domoticz.Debug("Failed!")
 
-        Domoticz.Debug("Updating devices from Local array")
+        Domoticz.Debug("Updating devices from EV Charger Holding Registers.")
+        if self.__SETTINGS['evCharger']:
+            time.sleep(5)
+            holdingRegisters = self.getHoldingRegisters(0x1000, 50, 50)
+            if holdingRegisters:
+                Domoticz.Debug("Done.")
+                self.updateEVChargerModBusDevicesHolding(holdingRegisters)
+            else:
+                Domoticz.Debug("Failed!")
+
+        Domoticz.Debug("Updating devices from Local array.")
         self.updateLocalDevices()
 
     def updateLocalDevices(self):
@@ -267,7 +360,52 @@ class BasePlugin:
         val = self.__RC_SETTINGS['Mode']
         UpdateDevice(66,0,"{}".format(val))
 
-    def updateModBusDevices(self, registers):
+    # EV Charger devices
+    def updateEVChargerModBusDevicesInput(self, registers):
+        decoder = BinaryPayloadDecoder.fromRegisters(registers, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
+        
+        # EV Charger Power / Energy
+        decoder.reset()
+        decoder.skip_bytes(0x000b * 2)
+        valP = decoder.decode_16bit_uint()
+        decoder.reset()
+        decoder.skip_bytes(0x000f * 2)
+        valE = decoder.decode_16bit_uint() * 100
+        UpdateDevice(100,0,"{}".format(valP))
+        UpdateDevice(110,0,"{};{}".format(valP, valE))
+
+        # EV Charger state
+        decoder.reset()
+        decoder.skip_bytes(0x001d * 2)
+        val = decoder.decode_16bit_uint()
+        if 0 <= val <= 10:
+            UpdateDevice(120,0,"{}".format(self.__EV_STATE[val]))
+        else:
+            UpdateDevice(120,0,"Unknown state")
+
+        # EV Charger Temperature
+        decoder.reset()
+        decoder.skip_bytes(0x001c * 2)
+        val = decoder.decode_16bit_int()
+        UpdateDevice(130,0,"{}".format(val))
+    
+    def updateEVChargerModBusDevicesHolding(self, registers):
+        decoder = BinaryPayloadDecoder.fromRegisters(registers, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
+        
+        # EV Charger Run Mode
+        decoder.reset()
+        decoder.skip_bytes(0x000d * 2)
+        val = decoder.decode_16bit_uint()
+        UpdateDevice(121,0,"{}".format(val * 10))
+    
+        # EV Charger Max Current
+        decoder.reset()
+        decoder.skip_bytes(0x0028 * 2)
+        val = decoder.decode_16bit_uint()
+        UpdateDevice(131,0,"{}".format(val / 100))
+    
+    # Inverter devices
+    def updateInverterModBusDevices(self, registers):
         decoder = BinaryPayloadDecoder.fromRegisters(registers, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
 
         # Output Power / Energy
@@ -452,11 +590,11 @@ class BasePlugin:
         UpdateDevice(57,0,"{}".format(val))
 
     def getInputRegisters(self, start=0, length=100, step=10):
-        Domoticz.Debug("Connecting to: " + self.__SETTINGS['address'] + ":" + str(self.__SETTINGS['port']) + ", unit ID:" + str(self.__SETTINGS['unitId']))
+        Domoticz.Debug("Connecting to: {}:{}, unitID: {}".format(self.__SETTINGS['address'], self.__SETTINGS['port'], self.__SETTINGS['unitId']))
         (cycles, res) = divmod(length, step)
         
         try:
-            client = ModbusTcpClient(host = self.__SETTINGS['address'], port = self.__SETTINGS['port'], unit_id = self.__SETTINGS['unitId'])
+            client = ModbusTcpClient(host=self.__SETTINGS['address'], port=self.__SETTINGS['port'], timeout=30, retries=5, retry_on_empty=True)
             client.connect()
         except:
             Domoticz.Debug("Connection timeout.")
@@ -474,7 +612,7 @@ class BasePlugin:
                 else:
                     break
             try:
-                result = client.read_input_registers((start + cycle * step), step2, self.__SETTINGS['unitId'])
+                result = client.read_input_registers((start + cycle * step), step2, slave=self.__SETTINGS['unitId'])
                 registers = registers + result.registers
             except:
                 Domoticz.Debug(result) 
@@ -487,11 +625,11 @@ class BasePlugin:
         return(registers)
 
     def getHoldingRegisters(self, start=0, length=100, step=10):
-        Domoticz.Debug("Connecting to: " + self.__SETTINGS['address'] + ":" + str(self.__SETTINGS['port']) + ", unit ID:" + str(self.__SETTINGS['unitId']))
+        Domoticz.Debug("Connecting to: {}:{}, unitID: {}".format(self.__SETTINGS['address'], self.__SETTINGS['port'], self.__SETTINGS['unitId']))
         (cycles, res) = divmod(length, step)
         
         try:
-            client = ModbusTcpClient(host = self.__SETTINGS['address'], port = self.__SETTINGS['port'], unit_id = self.__SETTINGS['unitId'])
+            client = ModbusTcpClient(host=self.__SETTINGS['address'], port=self.__SETTINGS['port'], timeout=30, retries=5, retry_on_empty=True)
             client.connect()
         except:
             Domoticz.Debug("Connection timeout.")
@@ -509,7 +647,7 @@ class BasePlugin:
                 else:
                     break
             try:
-                result = client.read_holding_registers((start + cycle * step), step2, self.__SETTINGS['unitId'])
+                result = client.read_holding_registers((start + cycle * step), step2, slave=self.__SETTINGS['unitId'])
                 registers = registers + result.registers
             except:
                 Domoticz.Debug(result) 
@@ -522,10 +660,10 @@ class BasePlugin:
         return(registers)
     
     def setMultipleRegisters(self, start, payload):
-        Domoticz.Debug("Connecting to: " + self.__SETTINGS['address'] + ":" + str(self.__SETTINGS['port']) + ", unit ID:" + str(self.__SETTINGS['unitId']))
+        Domoticz.Debug("Connecting to: {}:{}, unitID: {}".format(self.__SETTINGS['address'], self.__SETTINGS['port'], self.__SETTINGS['unitId']))
         
         try:
-            client = ModbusTcpClient(host = self.__SETTINGS['address'], port = self.__SETTINGS['port'], unit_id = self.__SETTINGS['unitId'])
+            client = ModbusTcpClient(host=self.__SETTINGS['address'], port=self.__SETTINGS['port'], timeout=30, retries=5, retry_on_empty=True)
             client.connect()
         except:
             Domoticz.Debug("Connection timeout.")
@@ -533,7 +671,7 @@ class BasePlugin:
             return False
         
         try:
-            result = client.write_registers(start, payload, self.__SETTINGS['unitId'])
+            result = client.write_registers(start, payload, slave=self.__SETTINGS['unitId'])
         except:
             Domoticz.Debug(result) 
             Domoticz.Debug("Unable to write multiple registers.")
