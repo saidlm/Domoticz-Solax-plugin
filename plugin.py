@@ -47,6 +47,10 @@ class BasePlugin:
         'evCharger': False,
         }
 
+
+    commInProgress = False
+    lastEVEnergy = 0
+
     # Inverter section
     # ================
 
@@ -124,7 +128,7 @@ class BasePlugin:
         [121, "EV Charger run Mode", 244, 73, 18, {"LevelActions": "|||", "LevelNames": "Stop|Fast|Eco|Green", "LevelOffHidden": "false", "SelectorStyle": "0" }, 1],
         # Temperature, Current etc
         [130, "EV Charger Temperature", 80, 5, 0, {}, 1],
-        [131, "EV Charger Max Current", 242, 1, 0, {'ValueStep':'0.1', 'ValueMin':'0', 'ValueMax':'32', 'ValueUnit':'A'}, 1],
+        #[131, "EV Charger Max Current", 242, 1, 0, {'ValueStep':'0.1', 'ValueMin':'0', 'ValueMax':'32', 'ValueUnit':'A'}, 1],
 
     ]
 
@@ -165,7 +169,6 @@ class BasePlugin:
         except:
             self.__SETTINGS['updateInterval'] = 10
 
-        Domoticz.Debug("Parameter Mode2 - Mod-Bus slave ID: {}".format(Parameters["Mode2"]))
         try:
             if 1 <=int(Parameters["Mode2"]) <= 255:
                 self.__SETTINGS['unitId'] = int(Parameters["Mode2"])
@@ -177,6 +180,8 @@ class BasePlugin:
         # Read Inverter parameters
         Domoticz.Debug("Reading configuration information from inverter.")
 
+        self.commInProgress = True
+
         while True:
             holdingRegisters = self.getHoldingRegisters(0, 374, 50)
             if holdingRegisters:
@@ -185,6 +190,7 @@ class BasePlugin:
             time.sleep(10)
 
         decoder = BinaryPayloadDecoder.fromRegisters(holdingRegisters, byteorder=Endian.BIG, wordorder=Endian.LITTLE)
+        self.commInProgress = False
         
         # Inverter type - max power
         decoder.reset()
@@ -233,12 +239,12 @@ class BasePlugin:
                     ).Create() 
 
         # Change devices' options
-        Domoticz.Debug("Maximum inverter power is set to: {} Watt(s)".format(str(self.__SETTINGS['maxPower'])))
+        Domoticz.Debug("Maximum inverter power is set to: {} Watt(s)".format(self.__SETTINGS['maxPower']))
         Devices[60].Update(nValue=0, sValue="0", Options={'ValueStep':'100','ValueMin':'-' + str(self.__SETTINGS['maxPower']), 'ValueMax':str(self.__SETTINGS['maxPower']), 'ValueUnit':'W'})
         Devices[63].Update(nValue=0, sValue="0", Options={'ValueStep':'100','ValueMin':'-' + str(self.__SETTINGS['maxPower']), 'ValueMax':str(self.__SETTINGS['maxPower']), 'ValueUnit':'W'})
 
         # Heartbeat interval setup
-        Domoticz.Debug("Update interval is set to: {} second(s)".format(str(self.__SETTINGS['updateInterval'])))
+        Domoticz.Debug("Update interval is set to: {} second(s)".format(self.__SETTINGS['updateInterval']))
         Domoticz.Heartbeat(int(self.__SETTINGS['updateInterval']))
 
         self.updateDevices()
@@ -254,36 +260,74 @@ class BasePlugin:
     def onCommand(self, Unit, Command, Level):
         Domoticz.Debug("onCommand")
         
+        # Remote Control Targer Power
         if Unit == 60:
             if -(self.__SETTINGS['maxPower']) <= Level <= self.__SETTINGS['maxPower']:
                 self.__RC_SETTINGS['PowerTarget'] = Level
+        # Remote Control Target Energy
         elif Unit == 61:
             if -12000 <= Level <= 12000:
                 self.__RC_SETTINGS['EnergyTarget'] = Level
+        # Remote Control Target SoC
         elif Unit == 62:
             if 10 <= Level <= 100:
                 self.__RC_SETTINGS['SOCTarget'] = Level
+        # Remote Control Charge Power
         elif Unit == 63:
             if -(self.__SETTINGS['maxPower']) <= Level <= self.__SETTINGS['maxPower']:
                 self.__RC_SETTINGS['ChargerPower'] = Level
+        # Remote Control Duration Time
         elif Unit == 64:
             if 0 <= Level <= 6000:
                 self.__RC_SETTINGS['DurationTime'] = Level
-        elif Unit == 65:
+        # Remote Control TimoOut
+        elif Unit == 65:    
             if 0 <= Level <= 6000:
                 self.__RC_SETTINGS['TimeOut'] = Level
+        # Remote Control Mode
         elif Unit == 66:
             if Level in [0, 10, 20, 30, 40]: 
                 self.__RC_SETTINGS['Mode'] = Level
+        # Remote Control Trigger
         elif Unit == 67:
             self.startRemoteControl()
             time.sleep(3)
             self.updateDevices()
             return
+        # EV Charger Run Mode
+        elif Unit == 121:
+            if Level in [0, 10, 20, 30]: 
+                val = Level / 10
+                self.updateInverter(0x100d, val)
+                time.sleep(1)
+                self.updateDevices()
+                return
         
         self.updateLocalDevices()
     
+    def updateInverter(self, register, value):
+        while self.commInProgress:
+            time.sleep(1)
+
+        self.commInProgress = True
+
+        Domoticz.Debug("Updating Inverter registers.")
+        
+        payload = int(value)
+        result = self.setRegister(register, payload)
+        if result:
+            Domoticz.Debug("Done.")
+        else:
+            Domoticz.Debug("Failed!")
+
+        self.commInProgress = False
+
     def startRemoteControl(self):
+        while self.commInProgress:
+            time.sleep(1)
+
+        self.commInProgress = True
+
         Domoticz.Debug("Starting ModBus Remote Control.")
         
         builder = BinaryPayloadBuilder(byteorder=Endian.BIG, wordorder=Endian.LITTLE)
@@ -302,15 +346,20 @@ class BasePlugin:
         builder.add_16bit_uint(int(self.__RC_SETTINGS['TimeOut']))              # Remote Control Timeout
 
         payload = builder.to_registers()
-
-        try:
-            self.setMultipleRegisters(0x007c, payload)
-            return True
-        except:
-            Domoticz.Debug("Problem to write Multiple Registers via Modbus.")
-            return False
+        result = self.setMultipleRegisters(0x007c, payload)
+        if result:
+            Domoticz.Debug("Done.")
+        else:
+            Domoticz.Debug("Failed!")
+        
+        self.commInProgress = False
 
     def updateDevices(self):
+        while self.commInProgress:
+            time.sleep(1)
+
+        self.commInProgress = True
+
         # Inverter data
         Domoticz.Debug("Updating devices from Inverter Input Registers.")
         inputRegisters = self.getInputRegisters(0, 290, 50)
@@ -344,6 +393,8 @@ class BasePlugin:
         Domoticz.Debug("Updating devices from Local array.")
         self.updateLocalDevices()
 
+        self.commInProgress = False
+
     def updateLocalDevices(self):
         val = self.__RC_SETTINGS['PowerTarget']
         UpdateDevice(60,0,"{}".format(val))
@@ -369,8 +420,11 @@ class BasePlugin:
         decoder.skip_bytes(0x000b * 2)
         valP = decoder.decode_16bit_uint()
         decoder.reset()
-        decoder.skip_bytes(0x000f * 2)
-        valE = decoder.decode_16bit_uint() * 100
+        decoder.skip_bytes(0x0010 * 2)
+        newEVEnergy = decoder.decode_32bit_uint() * 100
+        [oldP, oldE] = Devices[110].sValue.split(';')
+        valE = int(oldE) + newEVEnergy - self.lastEVEnergy
+        self.lastEVEnergy = newEVEnergy
         UpdateDevice(100,0,"{}".format(valP))
         UpdateDevice(110,0,"{};{}".format(valP, valE))
 
@@ -399,10 +453,10 @@ class BasePlugin:
         UpdateDevice(121,0,"{}".format(val * 10))
     
         # EV Charger Max Current
-        decoder.reset()
-        decoder.skip_bytes(0x0028 * 2)
-        val = decoder.decode_16bit_uint()
-        UpdateDevice(131,0,"{}".format(val / 100))
+        #decoder.reset()
+        #decoder.skip_bytes(0x0028 * 2)
+        #val = decoder.decode_16bit_uint()
+        #UpdateDevice(131,0,"{}".format(val / 100))
     
     # Inverter devices
     def updateInverterModBusDevices(self, registers):
@@ -658,6 +712,28 @@ class BasePlugin:
 
         client.close()
         return(registers)
+    
+    def setRegister(self, start, payload):
+        Domoticz.Debug("Connecting to: {}:{}, unitID: {}".format(self.__SETTINGS['address'], self.__SETTINGS['port'], self.__SETTINGS['unitId']))
+        
+        try:
+            client = ModbusTcpClient(host=self.__SETTINGS['address'], port=self.__SETTINGS['port'], timeout=30, retries=5, retry_on_empty=True)
+            client.connect()
+        except:
+            Domoticz.Debug("Connection timeout.")
+            client.close()
+            return False
+        
+        try:
+            result = client.write_register(start, payload, slave=self.__SETTINGS['unitId'])
+        except:
+            Domoticz.Debug(result) 
+            Domoticz.Debug("Unable to write holding register.")
+            client.close()
+            return False
+
+        client.close()
+        return(True)
     
     def setMultipleRegisters(self, start, payload):
         Domoticz.Debug("Connecting to: {}:{}, unitID: {}".format(self.__SETTINGS['address'], self.__SETTINGS['port'], self.__SETTINGS['unitId']))
