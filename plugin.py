@@ -76,12 +76,14 @@ class BasePlugin:
         [17, "Off-Grid Energy", 243, 29, 0, {}, 1],
         # Smart meters
         [20, "Total Grid Energy", 250, 1, 0, {}, 1],
+        [21, "Total Grid Energy (tariff)", 250, 1, 0, {}, 1],
         # Switches and other info
         [30, "Battery Capacity", 243, 6, 0, {}, 1],
         [31, "Inverter Temperature", 80, 5, 0, {}, 1],
         [32, "Battery Temperature", 80, 5, 0, {}, 1],
         [33, "Run Mode", 243, 19, 0, {}, 1],
         [34, "Grid Status", 244, 73, 0, {}, 1],
+        [39, "Tariff", 244, 73, 0, {}, 1],
         # Remote control devices
         [50, "Actual Target Power", 243, 31, 0, {'Custom': '1;W'}, 1],
         [51, "Actual Target Energy", 243, 31, 0, {'Custom': '1;Wh'}, 1],
@@ -259,7 +261,11 @@ class BasePlugin:
 
     def onCommand(self, Unit, Command, Level):
         Domoticz.Debug("onCommand")
-        
+
+        Command = Command.strip()
+        action, sep, params = Command.partition(' ')
+        action = action.capitalize()       
+
         # Remote Control Targer Power
         if Unit == 60:
             if -(self.__SETTINGS['maxPower']) <= Level <= self.__SETTINGS['maxPower']:
@@ -302,6 +308,13 @@ class BasePlugin:
                 time.sleep(1)
                 self.updateDevices()
                 return
+        elif Unit == 39:
+            if action == 'On':
+                Domoticz.Debug('-----> ON')
+                UpdateDevice(39,1,"On")
+            else:
+                Domoticz.Debug('-----> OFF')
+                UpdateDevice(39,0,"Off")
         
         self.updateLocalDevices()
     
@@ -422,7 +435,15 @@ class BasePlugin:
         decoder.reset()
         decoder.skip_bytes(0x0010 * 2)
         newEVEnergy = decoder.decode_32bit_uint() * 100
-        [oldP, oldE] = Devices[110].sValue.split(';')
+
+        if newEVEnergy < self.lastEVEnergy:
+            self.lastEVEnergy = 0
+        
+        try:
+            [oldP, oldE] = Devices[110].sValue.split(';')
+        except:
+            [oldP, oldE] = [0, 0]
+
         valE = int(oldE) + newEVEnergy - self.lastEVEnergy
         self.lastEVEnergy = newEVEnergy
         UpdateDevice(100,0,"{}".format(valP))
@@ -519,15 +540,42 @@ class BasePlugin:
         valE1 = decoder.decode_32bit_uint() * 10
         valE2 = decoder.decode_32bit_uint() * 10
         UpdateDevice(6,0,"{}".format(valP))
+
         if valP >= 0:
             valP1 = valP
             valP2 = 0
         elif valP < 0:
             valP1 = 0
             valP2 = abs(valP)
+        
+        try:
+            [oldP1, oldE1] = Devices[13].sValue.split(';')
+        except:
+            [oldP1, oldE1] = [0, 0]
+
+        try:
+            [oldP2, oldE2] = Devices[14].sValue.split(';')
+        except:
+            [oldP2, oldE2] = [0, 0]
+
+        try:
+            [oldE2T1, oldE2T2, oldE1T1, oldE1T2, oldP1, oldP2] = Devices[21].sValue.split(';')
+        except:
+            [oldE2T1, oldE2T2, oldE1T1, oldE1T2, oldP1, oldP2] = [0, 0, 0, 0, 0, 0]
+
         UpdateDevice(13,0,"{};{}".format(valP1, valE1))
         UpdateDevice(14,0,"{};{}".format(valP2, valE2))
         UpdateDevice(20,0,"{};{};{};{};{};{}".format(valE2, 0, valE1, 0, valP2, valP1))
+
+        if Devices[39].sValue == 'On':
+            valE1 = int(oldE1T2) + valE1 - int(oldE1) 
+            valE2 = int(oldE2T2) + valE2 - int(oldE2) 
+            UpdateDevice(21,0,"{};{};{};{};{};{}".format(oldE2T1, valE2, oldE1T1 , valE1, valP2, valP1))
+        else:
+            valE1 = int(oldE1T1) + valE1 - int(oldE1) 
+            valE2 = int(oldE2T1) + valE2 - int(oldE2) 
+            UpdateDevice(21,0,"{};{};{};{};{};{}".format(valE2, oldE2T2, valE1, oldE1T2, valP2, valP1))
+
 
         # Local Power / Energy Consumption
         # Energy is calculated by Domoticz due to lack of information from inverter
