@@ -303,17 +303,16 @@ class BasePlugin:
         # EV Charger Run Mode
         elif Unit == 121:
             if Level in [0, 10, 20, 30]: 
-                val = Level / 10
+                val = Level/10
                 self.updateInverter(0x100d, val)
-                time.sleep(1)
+                time.sleep(2)
                 self.updateDevices()
-                return
+            return
+        # Tariff switch
         elif Unit == 39:
             if action == 'On':
-                Domoticz.Debug('-----> ON')
                 UpdateDevice(39,1,"On")
             else:
-                Domoticz.Debug('-----> OFF')
                 UpdateDevice(39,0,"Off")
         
         self.updateLocalDevices()
@@ -433,7 +432,7 @@ class BasePlugin:
         decoder.skip_bytes(0x000b * 2)
         valP = decoder.decode_16bit_uint()
         decoder.reset()
-        decoder.skip_bytes(0x0010 * 2)
+        decoder.skip_bytes(0x000f * 2)
         newEVEnergy = decoder.decode_32bit_uint() * 100
 
         if newEVEnergy < self.lastEVEnergy:
@@ -444,7 +443,7 @@ class BasePlugin:
         except:
             [oldP, oldE] = [0, 0]
 
-        valE = int(oldE) + newEVEnergy - self.lastEVEnergy
+        valE = float(oldE) + newEVEnergy - self.lastEVEnergy
         self.lastEVEnergy = newEVEnergy
         UpdateDevice(100,0,"{}".format(valP))
         UpdateDevice(110,0,"{};{}".format(valP, valE))
