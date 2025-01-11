@@ -695,7 +695,7 @@ class BasePlugin:
         (cycles, res) = divmod(length, step)
         
         try:
-            client = ModbusTcpClient(host=self.__SETTINGS['address'], port=self.__SETTINGS['port'], timeout=30, retries=5, retry_on_empty=True)
+            client = ModbusTcpClient(host=self.__SETTINGS['address'], port=self.__SETTINGS['port'], timeout=30, retries=5)
             client.connect()
         except:
             Domoticz.Debug("Connection timeout.")
@@ -713,10 +713,10 @@ class BasePlugin:
                 else:
                     break
             try:
-                result = client.read_input_registers((start + cycle * step), step2, slave=self.__SETTINGS['unitId'])
+                result = client.read_input_registers(address=(start + cycle * step), count=step2, slave=self.__SETTINGS['unitId'])
                 registers = registers + result.registers
             except:
-                Domoticz.Debug(result) 
+                #Domoticz.Debug(result) 
                 Domoticz.Debug("Unable to read input registers.")
                 client.close()
                 return False
@@ -730,7 +730,7 @@ class BasePlugin:
         (cycles, res) = divmod(length, step)
         
         try:
-            client = ModbusTcpClient(host=self.__SETTINGS['address'], port=self.__SETTINGS['port'], timeout=30, retries=5, retry_on_empty=True)
+            client = ModbusTcpClient(host=self.__SETTINGS['address'], port=self.__SETTINGS['port'], timeout=30, retries=5)
             client.connect()
         except:
             Domoticz.Debug("Connection timeout.")
@@ -748,10 +748,10 @@ class BasePlugin:
                 else:
                     break
             try:
-                result = client.read_holding_registers((start + cycle * step), step2, slave=self.__SETTINGS['unitId'])
+                result = client.read_holding_registers(address=(start + cycle * step), count=step2, slave=self.__SETTINGS['unitId'])
                 registers = registers + result.registers
             except:
-                Domoticz.Debug(result) 
+                #Domoticz.Debug(result) 
                 Domoticz.Debug("Unable to read holding registers.")
                 client.close()
                 return False
@@ -764,7 +764,7 @@ class BasePlugin:
         Domoticz.Debug("Connecting to: {}:{}, unitID: {}".format(self.__SETTINGS['address'], self.__SETTINGS['port'], self.__SETTINGS['unitId']))
         
         try:
-            client = ModbusTcpClient(host=self.__SETTINGS['address'], port=self.__SETTINGS['port'], timeout=30, retries=5, retry_on_empty=True)
+            client = ModbusTcpClient(host=self.__SETTINGS['address'], port=self.__SETTINGS['port'], timeout=30, retries=5)
             client.connect()
         except:
             Domoticz.Debug("Connection timeout.")
@@ -772,9 +772,9 @@ class BasePlugin:
             return False
         
         try:
-            result = client.write_register(start, payload, slave=self.__SETTINGS['unitId'])
+            result = client.write_register(address=start, value=payload, slave=self.__SETTINGS['unitId'])
         except:
-            Domoticz.Debug(result) 
+            #Domoticz.Debug(result) 
             Domoticz.Debug("Unable to write holding register.")
             client.close()
             return False
@@ -786,7 +786,7 @@ class BasePlugin:
         Domoticz.Debug("Connecting to: {}:{}, unitID: {}".format(self.__SETTINGS['address'], self.__SETTINGS['port'], self.__SETTINGS['unitId']))
         
         try:
-            client = ModbusTcpClient(host=self.__SETTINGS['address'], port=self.__SETTINGS['port'], timeout=30, retries=5, retry_on_empty=True)
+            client = ModbusTcpClient(host=self.__SETTINGS['address'], port=self.__SETTINGS['port'], timeout=30, retries=5)
             client.connect()
         except:
             Domoticz.Debug("Connection timeout.")
@@ -794,9 +794,9 @@ class BasePlugin:
             return False
         
         try:
-            result = client.write_registers(start, payload, slave=self.__SETTINGS['unitId'])
+            result = client.write_registers(address=start, values=payload, slave=self.__SETTINGS['unitId'])
         except:
-            Domoticz.Debug(result) 
+            #Domoticz.Debug(result) 
             Domoticz.Debug("Unable to write multiple registers.")
             client.close()
             return False
